@@ -2,6 +2,14 @@
 
 Payments engine which reads a series of transactions from a CSV and produces the state of client accounts as a CSV.
 
+## Usage
+
+The payments engine takes an transactions.csv and returns the state of the client accounts which goes to STDOUT.
+
+```sh
+cargo run -- transactions.csv > accounts.csv
+```
+
 ## Error handling
 
 The current implementation of input parsing and deserialization into structs lacks robust error handling. As a result, any malformed or invalid input data could lead to an unrecoverable application failure.
