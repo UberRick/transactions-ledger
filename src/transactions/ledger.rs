@@ -5,6 +5,7 @@ use super::models::{Account, Transaction, TransactionKind};
 pub struct Ledger {
     pub accounts: HashMap<u16, Account>,
     pub deposits: HashMap<u32, Transaction>,
+    pub disputes: HashMap<u32, u16>,
 }
 
 impl Ledger {
@@ -12,6 +13,7 @@ impl Ledger {
         Ledger {
             accounts: HashMap::new(),
             deposits: HashMap::new(),
+            disputes: HashMap::new(),
         }
     }
 
@@ -45,23 +47,28 @@ impl Ledger {
                     if let Some(TransactionKind::Deposit { amount }) = ref_tx {
                         account.available -= amount;
                         account.held += amount;
+                        self.disputes.insert(tx.tx_id, tx.acc_id);
                     }
                 }
                 TransactionKind::Resolve => {
-                    let ref_tx = self.deposits.get(&tx.tx_id).map(|tx| tx.kind.clone());
+                    if self.disputes.remove(&tx.tx_id).is_some() {
+                        let ref_tx = self.deposits.get(&tx.tx_id).map(|tx| tx.kind.clone());
 
-                    if let Some(TransactionKind::Deposit { amount }) = ref_tx {
-                        account.available += amount;
-                        account.held -= amount;
+                        if let Some(TransactionKind::Deposit { amount }) = ref_tx {
+                            account.available += amount;
+                            account.held -= amount;
+                        }
                     }
                 }
                 TransactionKind::Chargeback => {
-                    let ref_tx = self.deposits.get(&tx.tx_id).map(|tx| tx.kind.clone());
+                    if self.disputes.remove(&tx.tx_id).is_some() {
+                        let ref_tx = self.deposits.get(&tx.tx_id).map(|tx| tx.kind.clone());
 
-                    if let Some(TransactionKind::Deposit { amount }) = ref_tx {
-                        account.held -= amount;
-                        account.total -= amount;
-                        account.locked = true;
+                        if let Some(TransactionKind::Deposit { amount }) = ref_tx {
+                            account.held -= amount;
+                            account.total -= amount;
+                            account.locked = true;
+                        }
                     }
                 }
             }
@@ -292,6 +299,71 @@ mod tests {
             Transaction {
                 tx_id: 2,
                 kind: TransactionKind::Withdrawal { amount: dec!(3.0) },
+                acc_id: 1,
+            },
+        ];
+
+        ledger.process_transactions(transactions);
+
+        let account = ledger.accounts.get(&1).unwrap();
+        assert_eq!(account.available, dec!(2.0));
+        assert_eq!(account.held, dec!(0.0));
+        assert_eq!(account.total, dec!(2.0));
+    }
+
+    #[test]
+    fn test_processing_disput_with_non_existant_deposit() {
+        let mut ledger = Ledger::new();
+        let transactions = vec![Transaction {
+            tx_id: 1,
+            kind: TransactionKind::Dispute,
+            acc_id: 1,
+        }];
+
+        ledger.process_transactions(transactions);
+
+        let account = ledger.accounts.get(&1).unwrap();
+        assert_eq!(account.available, dec!(0.0));
+        assert_eq!(account.held, dec!(0.0));
+        assert_eq!(account.total, dec!(0.0));
+    }
+
+    #[test]
+    fn test_processing_resolve_with_non_existent_dispute() {
+        let mut ledger = Ledger::new();
+        let transactions = vec![
+            Transaction {
+                tx_id: 1,
+                kind: TransactionKind::Deposit { amount: dec!(2.0) },
+                acc_id: 1,
+            },
+            Transaction {
+                tx_id: 1,
+                kind: TransactionKind::Resolve,
+                acc_id: 1,
+            },
+        ];
+
+        ledger.process_transactions(transactions);
+
+        let account = ledger.accounts.get(&1).unwrap();
+        assert_eq!(account.available, dec!(2.0));
+        assert_eq!(account.held, dec!(0.0));
+        assert_eq!(account.total, dec!(2.0));
+    }
+
+    #[test]
+    fn test_processing_chargeback_with_non_existent_dispute() {
+        let mut ledger = Ledger::new();
+        let transactions = vec![
+            Transaction {
+                tx_id: 1,
+                kind: TransactionKind::Deposit { amount: dec!(2.0) },
+                acc_id: 1,
+            },
+            Transaction {
+                tx_id: 1,
+                kind: TransactionKind::Chargeback,
                 acc_id: 1,
             },
         ];
