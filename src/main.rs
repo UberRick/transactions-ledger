@@ -1,29 +1,27 @@
-use std::env;
 use std::error::Error;
 use std::fs::File;
 use std::io::{Read, Write};
+
+use clap::Parser;
 
 use self::transactions::ledger::Ledger;
 
 mod transactions;
 
+#[derive(Parser)]
+struct Args {
+    #[clap()]
+    file: String,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-    let file_path = get_file_path_from_args()?;
-    let file = File::open(file_path)?;
+    let args = Args::parse();
+    let file = File::open(args.file)?;
 
     let mut ledger = Ledger::new();
     process_transactions(file, &mut ledger)?;
 
     write_ledger_accounts(&ledger, std::io::stdout())
-}
-
-fn get_file_path_from_args() -> Result<String, Box<dyn Error>> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() != 2 {
-        return Err("Usage: cargo run -- transactions.csv".into());
-    }
-
-    args.get(1).cloned().ok_or("error parsing file path".into())
 }
 
 fn process_transactions<R: Read>(reader: R, ledger: &mut Ledger) -> Result<(), Box<dyn Error>> {
