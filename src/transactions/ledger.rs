@@ -279,4 +279,28 @@ mod tests {
         assert_eq!(account.total, dec!(0.0));
         assert_eq!(account.locked, true);
     }
+
+    #[test]
+    fn test_processing_transactions_with_insufficient_funds() {
+        let mut ledger = Ledger::new();
+        let transactions = vec![
+            Transaction {
+                tx_id: 1,
+                kind: TransactionKind::Deposit { amount: dec!(2.0) },
+                acc_id: 1,
+            },
+            Transaction {
+                tx_id: 2,
+                kind: TransactionKind::Withdrawal { amount: dec!(3.0) },
+                acc_id: 1,
+            },
+        ];
+
+        ledger.process_transactions(transactions);
+
+        let account = ledger.accounts.get(&1).unwrap();
+        assert_eq!(account.available, dec!(2.0));
+        assert_eq!(account.held, dec!(0.0));
+        assert_eq!(account.total, dec!(2.0));
+    }
 }
