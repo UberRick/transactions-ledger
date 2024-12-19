@@ -17,58 +17,56 @@ impl Ledger {
         }
     }
 
-    pub fn process_transactions(&mut self, txs: Vec<Transaction>) {
-        for tx in txs {
-            let account = self
-                .accounts
-                .entry(tx.acc_id)
-                .or_insert_with(|| Account::new(tx.acc_id));
+    pub fn process_transaction(&mut self, tx: Transaction) {
+        let account = self
+            .accounts
+            .entry(tx.acc_id)
+            .or_insert_with(|| Account::new(tx.acc_id));
 
-            if account.locked {
-                continue;
+        if account.locked {
+            return;
+        }
+
+        match tx.kind {
+            TransactionKind::Deposit { amount } => {
+                account.available += amount;
+                account.total += amount;
+                self.deposits.insert(tx.tx_id, tx.clone());
             }
+            TransactionKind::Withdrawal { amount } => {
+                if account.available < amount {
+                    return;
+                }
+                account.available -= amount;
+                account.total -= amount;
+            }
+            TransactionKind::Dispute => {
+                let ref_tx = self.deposits.get(&tx.tx_id).map(|tx| tx.kind.clone());
 
-            match tx.kind {
-                TransactionKind::Deposit { amount } => {
-                    account.available += amount;
-                    account.total += amount;
-                    self.deposits.insert(tx.tx_id, tx.clone());
-                }
-                TransactionKind::Withdrawal { amount } => {
-                    if account.available < amount {
-                        continue;
-                    }
+                if let Some(TransactionKind::Deposit { amount }) = ref_tx {
                     account.available -= amount;
-                    account.total -= amount;
+                    account.held += amount;
+                    self.disputes.insert(tx.tx_id, tx.acc_id);
                 }
-                TransactionKind::Dispute => {
+            }
+            TransactionKind::Resolve => {
+                if self.disputes.remove(&tx.tx_id).is_some() {
                     let ref_tx = self.deposits.get(&tx.tx_id).map(|tx| tx.kind.clone());
 
                     if let Some(TransactionKind::Deposit { amount }) = ref_tx {
-                        account.available -= amount;
-                        account.held += amount;
-                        self.disputes.insert(tx.tx_id, tx.acc_id);
+                        account.available += amount;
+                        account.held -= amount;
                     }
                 }
-                TransactionKind::Resolve => {
-                    if self.disputes.remove(&tx.tx_id).is_some() {
-                        let ref_tx = self.deposits.get(&tx.tx_id).map(|tx| tx.kind.clone());
+            }
+            TransactionKind::Chargeback => {
+                if self.disputes.remove(&tx.tx_id).is_some() {
+                    let ref_tx = self.deposits.get(&tx.tx_id).map(|tx| tx.kind.clone());
 
-                        if let Some(TransactionKind::Deposit { amount }) = ref_tx {
-                            account.available += amount;
-                            account.held -= amount;
-                        }
-                    }
-                }
-                TransactionKind::Chargeback => {
-                    if self.disputes.remove(&tx.tx_id).is_some() {
-                        let ref_tx = self.deposits.get(&tx.tx_id).map(|tx| tx.kind.clone());
-
-                        if let Some(TransactionKind::Deposit { amount }) = ref_tx {
-                            account.held -= amount;
-                            account.total -= amount;
-                            account.locked = true;
-                        }
+                    if let Some(TransactionKind::Deposit { amount }) = ref_tx {
+                        account.held -= amount;
+                        account.total -= amount;
+                        account.locked = true;
                     }
                 }
             }
@@ -98,7 +96,9 @@ mod tests {
             },
         ];
 
-        ledger.process_transactions(transactions);
+        for tx in transactions {
+            ledger.process_transaction(tx);
+        }
 
         let account = ledger.accounts.get(&1).unwrap();
         assert_eq!(account.available, dec!(1.0));
@@ -129,7 +129,9 @@ mod tests {
             },
         ];
 
-        ledger.process_transactions(transactions);
+        for tx in transactions {
+            ledger.process_transaction(tx);
+        }
 
         let account = ledger.accounts.get(&1).unwrap();
         assert_eq!(account.available, dec!(2.3345));
@@ -158,7 +160,9 @@ mod tests {
             },
         ];
 
-        ledger.process_transactions(transactions);
+        for tx in transactions {
+            ledger.process_transaction(tx);
+        }
 
         assert_eq!(ledger.deposits.len(), 2);
     }
@@ -184,7 +188,9 @@ mod tests {
             },
         ];
 
-        ledger.process_transactions(transactions);
+        for tx in transactions {
+            ledger.process_transaction(tx);
+        }
 
         let account = ledger.accounts.get(&1).unwrap();
 
@@ -214,7 +220,9 @@ mod tests {
             },
         ];
 
-        ledger.process_transactions(transactions);
+        for tx in transactions {
+            ledger.process_transaction(tx);
+        }
 
         let account = ledger.accounts.get(&1).unwrap();
         assert_eq!(account.available, dec!(2.0));
@@ -243,7 +251,9 @@ mod tests {
             },
         ];
 
-        ledger.process_transactions(transactions);
+        for tx in transactions {
+            ledger.process_transaction(tx);
+        }
 
         let account = ledger.accounts.get(&1).unwrap();
         assert_eq!(account.available, dec!(0.0));
@@ -278,7 +288,9 @@ mod tests {
             },
         ];
 
-        ledger.process_transactions(transactions);
+        for tx in transactions {
+            ledger.process_transaction(tx);
+        }
 
         let account = ledger.accounts.get(&1).unwrap();
         assert_eq!(account.available, dec!(0.0));
@@ -303,7 +315,9 @@ mod tests {
             },
         ];
 
-        ledger.process_transactions(transactions);
+        for tx in transactions {
+            ledger.process_transaction(tx);
+        }
 
         let account = ledger.accounts.get(&1).unwrap();
         assert_eq!(account.available, dec!(2.0));
@@ -320,7 +334,9 @@ mod tests {
             acc_id: 1,
         }];
 
-        ledger.process_transactions(transactions);
+        for tx in transactions {
+            ledger.process_transaction(tx);
+        }
 
         let account = ledger.accounts.get(&1).unwrap();
         assert_eq!(account.available, dec!(0.0));
@@ -344,7 +360,9 @@ mod tests {
             },
         ];
 
-        ledger.process_transactions(transactions);
+        for tx in transactions {
+            ledger.process_transaction(tx);
+        }
 
         let account = ledger.accounts.get(&1).unwrap();
         assert_eq!(account.available, dec!(2.0));
@@ -368,7 +386,9 @@ mod tests {
             },
         ];
 
-        ledger.process_transactions(transactions);
+        for tx in transactions {
+            ledger.process_transaction(tx);
+        }
 
         let account = ledger.accounts.get(&1).unwrap();
         assert_eq!(account.available, dec!(2.0));

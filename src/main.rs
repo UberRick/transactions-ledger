@@ -4,7 +4,6 @@ use std::fs::File;
 use std::io::{Read, Write};
 
 use self::transactions::ledger::Ledger;
-use self::transactions::models::Transaction;
 
 mod transactions;
 
@@ -12,10 +11,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let file_path = get_file_path_from_args()?;
     let file = File::open(file_path)?;
 
-    let transactions = read_transactions(file)?;
-
     let mut ledger = Ledger::new();
-    ledger.process_transactions(transactions);
+    process_transactions(file, &mut ledger)?;
 
     write_ledger_accounts(&ledger, std::io::stdout())
 }
@@ -29,14 +26,14 @@ fn get_file_path_from_args() -> Result<String, Box<dyn Error>> {
     args.get(1).cloned().ok_or("error parsing file path".into())
 }
 
-fn read_transactions<R: Read>(reader: R) -> Result<Vec<Transaction>, Box<dyn Error>> {
+fn process_transactions<R: Read>(reader: R, ledger: &mut Ledger) -> Result<(), Box<dyn Error>> {
     let mut rdr = csv::Reader::from_reader(reader);
-    rdr.records()
-        .map(|record| {
-            let record = record?;
-            transactions::parser::parse(&record)
-        })
-        .collect()
+    for result in rdr.records() {
+        let record = result?;
+        let transaction = transactions::parser::parse(&record)?;
+        ledger.process_transaction(transaction);
+    }
+    Ok(())
 }
 
 fn write_ledger_accounts<W: Write>(ledger: &Ledger, writer: W) -> Result<(), Box<dyn Error>> {
@@ -72,13 +69,10 @@ dispute,5,10,
 chargeback,5,10,
 "#;
 
-        // Parse transactions
-        let transactions =
-            read_transactions(input_csv.as_bytes()).expect("error reading transactions");
-
         // Process transactions
         let mut ledger = Ledger::new();
-        ledger.process_transactions(transactions);
+        process_transactions(input_csv.as_bytes(), &mut ledger)
+            .expect("error processing transactions");
 
         // Mock writer
         let mut buffer = Vec::new();
