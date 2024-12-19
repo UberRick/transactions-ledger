@@ -1,3 +1,4 @@
+#[derive(Debug, PartialEq)]
 pub enum TransactionKind {
     Deposit { amount: f64 },
     Withdrawal { amount: f64 },
@@ -6,6 +7,7 @@ pub enum TransactionKind {
     Chargeback,
 }
 
+#[derive(Debug)]
 pub struct Transaction {
     pub tx_id: u32,
     pub kind: TransactionKind,
