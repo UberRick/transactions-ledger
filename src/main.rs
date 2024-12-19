@@ -2,6 +2,7 @@ use std::env;
 use std::error::Error;
 use std::fs::File;
 
+use self::transactions::ledger::Ledger;
 use self::transactions::models::Transaction;
 
 mod transactions;
@@ -12,9 +13,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let transactions = read_transactions(file)?;
 
-    println!("{:#?}", transactions);
+    let mut ledger = Ledger::new();
+    ledger.process_transactions(transactions);
 
-    Ok(())
+    write_ledger_accounts(&ledger)
 }
 
 fn get_file_path_from_args() -> Result<String, Box<dyn Error>> {
@@ -34,4 +36,13 @@ fn read_transactions(file: File) -> Result<Vec<Transaction>, Box<dyn Error>> {
             transactions::parser::parse(&record)
         })
         .collect()
+}
+
+fn write_ledger_accounts(ledger: &Ledger) -> Result<(), Box<dyn Error>> {
+    let mut wtr = csv::Writer::from_writer(std::io::stdout());
+    for account in ledger.accounts.values() {
+        wtr.serialize(account)?;
+    }
+    wtr.flush()?;
+    Ok(())
 }

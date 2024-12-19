@@ -1,5 +1,7 @@
 use std::error::Error;
 
+use rust_decimal::Decimal;
+
 use super::models::{Transaction, TransactionKind};
 
 pub fn parse(record: &csv::StringRecord) -> Result<Transaction, Box<dyn Error>> {
@@ -16,7 +18,7 @@ pub fn parse(record: &csv::StringRecord) -> Result<Transaction, Box<dyn Error>> 
         .trim()
         .parse::<u32>()?;
 
-    let amount = record.get(3).and_then(|s| s.trim().parse::<f64>().ok());
+    let amount = record.get(3).and_then(|s| s.trim().parse::<Decimal>().ok());
 
     let kind = match tx_kind {
         "deposit" => {
@@ -46,18 +48,19 @@ pub fn parse(record: &csv::StringRecord) -> Result<Transaction, Box<dyn Error>> 
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use rust_decimal_macros::dec;
 
     #[test]
     fn test_parse() {
         let d = csv::StringRecord::from(vec!["deposit", "1", "1", "1.0"]);
         let dt = super::parse(&d).unwrap();
-        assert_eq!(dt.kind, TransactionKind::Deposit { amount: 1.0 });
+        assert_eq!(dt.kind, TransactionKind::Deposit { amount: dec!(1.0) });
         assert_eq!(dt.acc_id, 1);
         assert_eq!(dt.tx_id, 1);
 
         let w = csv::StringRecord::from(vec!["withdrawal", "2", "2", "2.0"]);
         let wt = super::parse(&w).unwrap();
-        assert_eq!(wt.kind, TransactionKind::Withdrawal { amount: 2.0 });
+        assert_eq!(wt.kind, TransactionKind::Withdrawal { amount: dec!(2.0) });
         assert_eq!(wt.acc_id, 2);
         assert_eq!(wt.tx_id, 2);
 
@@ -84,7 +87,12 @@ mod tests {
     fn test_parse_amounts_with_4dp() {
         let d = csv::StringRecord::from(vec!["deposit", "1", "1", "1.1234"]);
         let dt = super::parse(&d).unwrap();
-        assert_eq!(dt.kind, TransactionKind::Deposit { amount: 1.1234 });
+        assert_eq!(
+            dt.kind,
+            TransactionKind::Deposit {
+                amount: dec!(1.1234)
+            }
+        );
         assert_eq!(dt.acc_id, 1);
         assert_eq!(dt.tx_id, 1);
     }
