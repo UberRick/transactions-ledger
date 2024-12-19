@@ -10,15 +10,13 @@ pub fn parse(record: &csv::StringRecord) -> Result<Transaction, Box<dyn Error>> 
     let account_id = record
         .get(1)
         .ok_or("error parsing account_id")?
-        .trim()
         .parse::<u16>()?;
     let id = record
         .get(2)
         .ok_or("error parsing transaction id")?
-        .trim()
         .parse::<u32>()?;
 
-    let amount = record.get(3).and_then(|s| s.trim().parse::<Decimal>().ok());
+    let amount = record.get(3).and_then(|s| s.parse::<Decimal>().ok());
 
     let kind = match tx_kind {
         "deposit" => {

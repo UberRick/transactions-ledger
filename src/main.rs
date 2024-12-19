@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 
 use clap::Parser;
+use csv::Trim;
 
 use self::transactions::ledger::Ledger;
 
@@ -25,7 +26,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn process_transactions<R: Read>(reader: R, ledger: &mut Ledger) -> Result<(), Box<dyn Error>> {
-    let mut rdr = csv::Reader::from_reader(reader);
+    let mut rdr = csv::ReaderBuilder::new()
+        .trim(Trim::All)
+        .from_reader(reader);
     for result in rdr.records() {
         let record = result?;
         let transaction = transactions::parser::parse(&record)?;
