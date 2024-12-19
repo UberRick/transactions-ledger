@@ -2,10 +2,16 @@ use std::collections::HashMap;
 
 use super::models::{Account, Transaction, TransactionKind};
 
+#[derive(Debug, Hash, Eq, PartialEq)]
+pub struct TxKey {
+    acc_id: u16,
+    tx_id: u32,
+}
+
 pub struct Ledger {
     pub accounts: HashMap<u16, Account>,
-    pub deposits: HashMap<u32, Transaction>,
-    pub disputes: HashMap<u32, u16>,
+    pub deposits: HashMap<TxKey, Transaction>,
+    pub disputes: HashMap<TxKey, u16>,
 }
 
 impl Ledger {
@@ -27,11 +33,16 @@ impl Ledger {
             return;
         }
 
+        let tx_key = TxKey {
+            acc_id: tx.acc_id,
+            tx_id: tx.tx_id,
+        };
+
         match tx.kind {
             TransactionKind::Deposit { amount } => {
                 account.available += amount;
                 account.total += amount;
-                self.deposits.insert(tx.tx_id, tx.clone());
+                self.deposits.insert(tx_key, tx.clone());
             }
             TransactionKind::Withdrawal { amount } => {
                 if account.available < amount {
@@ -41,17 +52,17 @@ impl Ledger {
                 account.total -= amount;
             }
             TransactionKind::Dispute => {
-                let ref_tx = self.deposits.get(&tx.tx_id).map(|tx| tx.kind.clone());
+                let ref_tx = self.deposits.get(&tx_key).map(|tx| tx.kind.clone());
 
                 if let Some(TransactionKind::Deposit { amount }) = ref_tx {
                     account.available -= amount;
                     account.held += amount;
-                    self.disputes.insert(tx.tx_id, tx.acc_id);
+                    self.disputes.insert(tx_key, tx.acc_id);
                 }
             }
             TransactionKind::Resolve => {
-                if self.disputes.remove(&tx.tx_id).is_some() {
-                    let ref_tx = self.deposits.get(&tx.tx_id).map(|tx| tx.kind.clone());
+                if self.disputes.remove(&tx_key).is_some() {
+                    let ref_tx = self.deposits.get(&tx_key).map(|tx| tx.kind.clone());
 
                     if let Some(TransactionKind::Deposit { amount }) = ref_tx {
                         account.available += amount;
@@ -60,8 +71,8 @@ impl Ledger {
                 }
             }
             TransactionKind::Chargeback => {
-                if self.disputes.remove(&tx.tx_id).is_some() {
-                    let ref_tx = self.deposits.get(&tx.tx_id).map(|tx| tx.kind.clone());
+                if self.disputes.contains_key(&tx_key) {
+                    let ref_tx = self.deposits.get(&tx_key).map(|tx| tx.kind.clone());
 
                     if let Some(TransactionKind::Deposit { amount }) = ref_tx {
                         account.held -= amount;
@@ -168,6 +179,42 @@ mod tests {
     }
 
     #[test]
+    fn test_process_transactions_with_dispute_without_matching_client() {
+        let mut ledger = Ledger::new();
+        let transactions = vec![
+            Transaction {
+                tx_id: 1,
+                kind: TransactionKind::Deposit { amount: dec!(2.0) },
+                acc_id: 1,
+            },
+            Transaction {
+                tx_id: 2,
+                kind: TransactionKind::Deposit { amount: dec!(2.0) },
+                acc_id: 1,
+            },
+            Transaction {
+                tx_id: 1,
+                kind: TransactionKind::Dispute,
+                acc_id: 2,
+            },
+        ];
+
+        for tx in transactions {
+            ledger.process_transaction(tx);
+        }
+
+        let account = ledger.accounts.get(&1).unwrap();
+        let incorrect_account = ledger.accounts.get(&2).unwrap();
+
+        assert_eq!(account.available, dec!(4.0));
+        assert_eq!(account.held, dec!(0.0));
+        assert_eq!(account.total, dec!(4.0));
+        assert_eq!(incorrect_account.available, dec!(0.0));
+        assert_eq!(incorrect_account.held, dec!(0.0));
+        assert_eq!(incorrect_account.total, dec!(0.0));
+    }
+
+    #[test]
     fn test_process_transactions_with_dispute() {
         let mut ledger = Ledger::new();
         let transactions = vec![
@@ -225,9 +272,14 @@ mod tests {
         }
 
         let account = ledger.accounts.get(&1).unwrap();
+        let tx_key = TxKey {
+            acc_id: 1,
+            tx_id: 1,
+        };
         assert_eq!(account.available, dec!(2.0));
         assert_eq!(account.held, dec!(0.0));
         assert_eq!(account.total, dec!(2.0));
+        assert!(!ledger.disputes.contains_key(&tx_key));
     }
 
     #[test]
@@ -256,10 +308,15 @@ mod tests {
         }
 
         let account = ledger.accounts.get(&1).unwrap();
+        let tx_key = TxKey {
+            acc_id: 1,
+            tx_id: 1,
+        };
         assert_eq!(account.available, dec!(0.0));
         assert_eq!(account.held, dec!(0.0));
         assert_eq!(account.total, dec!(0.0));
         assert_eq!(account.locked, true);
+        assert!(ledger.disputes.contains_key(&tx_key));
     }
 
     #[test]
