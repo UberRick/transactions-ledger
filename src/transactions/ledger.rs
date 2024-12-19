@@ -35,6 +35,14 @@ impl Ledger {
                     account.available -= amount;
                     account.total -= amount;
                 }
+                TransactionKind::Dispute => {
+                    let ref_tx = self.deposits.get(&tx.tx_id).map(|tx| tx.kind.clone());
+
+                    if let Some(TransactionKind::Deposit { amount }) = ref_tx {
+                        account.available -= amount;
+                        account.held += amount;
+                    }
+                }
                 _ => {}
             }
         }
@@ -126,5 +134,35 @@ mod tests {
         ledger.process_transactions(transactions);
 
         assert_eq!(ledger.deposits.len(), 2);
+    }
+
+    #[test]
+    fn test_process_transactions_with_dispute() {
+        let mut ledger = Ledger::new();
+        let transactions = vec![
+            Transaction {
+                tx_id: 1,
+                kind: TransactionKind::Deposit { amount: dec!(2.0) },
+                acc_id: 1,
+            },
+            Transaction {
+                tx_id: 2,
+                kind: TransactionKind::Deposit { amount: dec!(2.0) },
+                acc_id: 1,
+            },
+            Transaction {
+                tx_id: 1,
+                kind: TransactionKind::Dispute,
+                acc_id: 1,
+            },
+        ];
+
+        ledger.process_transactions(transactions);
+
+        let account = ledger.accounts.get(&1).unwrap();
+
+        assert_eq!(account.available, dec!(2.0));
+        assert_eq!(account.held, dec!(2.0));
+        assert_eq!(account.total, dec!(4.0));
     }
 }
