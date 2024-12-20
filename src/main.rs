@@ -28,6 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn process_transactions<R: Read>(reader: R, ledger: &mut Ledger) -> Result<(), Box<dyn Error>> {
     let mut rdr = csv::ReaderBuilder::new()
         .trim(Trim::All)
+        .flexible(true)
         .from_reader(reader);
     for result in rdr.records() {
         let record = result?;
@@ -107,5 +108,26 @@ chargeback,5,10,
             "{}",
             actual_output
         );
+    }
+
+    #[test]
+    fn test_flexible_csv() {
+        let input_csv = r#"type,client,tx,amount
+deposit,1,1,1.0
+deposit,2,2,2.0
+deposit,1,3,2.0
+withdrawal,1,4,1.5
+withdrawal,2,5,3.0
+deposit,3,6,1.0
+deposit,3,7,2.0
+dispute,3,7
+resolve,3,7
+"#;
+
+        let mut ledger = Ledger::new();
+        process_transactions(input_csv.as_bytes(), &mut ledger)
+            .expect("error processing transactions");
+
+        assert_eq!(ledger.accounts.len(), 3);
     }
 }
