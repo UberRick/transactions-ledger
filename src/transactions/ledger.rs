@@ -8,10 +8,15 @@ pub struct TxKey {
     tx_id: u32,
 }
 
+#[derive(Debug)]
+pub struct TxValue {
+    kind: TransactionKind,
+    dispute: bool,
+}
+
 pub struct Ledger {
     pub accounts: HashMap<u16, Account>,
-    pub deposits: HashMap<TxKey, Transaction>,
-    pub disputes: HashMap<TxKey, u16>,
+    pub deposits: HashMap<TxKey, TxValue>,
 }
 
 impl Ledger {
@@ -19,7 +24,6 @@ impl Ledger {
         Ledger {
             accounts: HashMap::new(),
             deposits: HashMap::new(),
-            disputes: HashMap::new(),
         }
     }
 
@@ -38,11 +42,16 @@ impl Ledger {
             tx_id: tx.tx_id,
         };
 
+        let default_value = TxValue {
+            kind: tx.kind.clone(),
+            dispute: false,
+        };
+
         match tx.kind {
             TransactionKind::Deposit { amount } => {
                 account.available += amount;
                 account.total += amount;
-                self.deposits.insert(tx_key, tx.clone());
+                self.deposits.insert(tx_key, default_value);
             }
             TransactionKind::Withdrawal { amount } => {
                 if account.available < amount {
@@ -52,32 +61,46 @@ impl Ledger {
                 account.total -= amount;
             }
             TransactionKind::Dispute => {
-                let ref_tx = self.deposits.get(&tx_key).map(|tx| tx.kind.clone());
+                let ref_tx = self.deposits.get_mut(&tx_key);
 
-                if let Some(TransactionKind::Deposit { amount }) = ref_tx {
-                    account.available -= amount;
-                    account.held += amount;
-                    self.disputes.insert(tx_key, tx.acc_id);
+                if let Some(ref_tx) = ref_tx {
+                    if !ref_tx.dispute {
+                        ref_tx.dispute = true;
+                        let ref_kind = ref_tx.kind.clone();
+
+                        if let TransactionKind::Deposit { amount } = ref_kind {
+                            account.available -= amount;
+                            account.held += amount;
+                        }
+                    }
                 }
             }
             TransactionKind::Resolve => {
-                if self.disputes.remove(&tx_key).is_some() {
-                    let ref_tx = self.deposits.get(&tx_key).map(|tx| tx.kind.clone());
+                if let Some(ref_tx) = self.deposits.get_mut(&tx_key) {
+                    if ref_tx.dispute {
+                        let ref_kind = ref_tx.kind.clone();
 
-                    if let Some(TransactionKind::Deposit { amount }) = ref_tx {
-                        account.available += amount;
-                        account.held -= amount;
+                        if let TransactionKind::Deposit { amount } = ref_kind {
+                            account.available += amount;
+                            account.held -= amount;
+                        }
+
+                        ref_tx.dispute = false;
                     }
                 }
             }
             TransactionKind::Chargeback => {
-                if self.disputes.contains_key(&tx_key) {
-                    let ref_tx = self.deposits.get(&tx_key).map(|tx| tx.kind.clone());
+                if let Some(ref_tx) = self.deposits.get_mut(&tx_key) {
+                    if ref_tx.dispute {
+                        let ref_kind = ref_tx.kind.clone();
 
-                    if let Some(TransactionKind::Deposit { amount }) = ref_tx {
-                        account.held -= amount;
-                        account.total -= amount;
-                        account.locked = true;
+                        if let TransactionKind::Deposit { amount } = ref_kind {
+                            account.held -= amount;
+                            account.total -= amount;
+                            account.locked = true;
+                        }
+
+                        ref_tx.dispute = false;
                     }
                 }
             }
@@ -272,14 +295,9 @@ mod tests {
         }
 
         let account = ledger.accounts.get(&1).unwrap();
-        let tx_key = TxKey {
-            acc_id: 1,
-            tx_id: 1,
-        };
         assert_eq!(account.available, dec!(2.0));
         assert_eq!(account.held, dec!(0.0));
         assert_eq!(account.total, dec!(2.0));
-        assert!(!ledger.disputes.contains_key(&tx_key));
     }
 
     #[test]
@@ -316,7 +334,7 @@ mod tests {
         assert_eq!(account.held, dec!(0.0));
         assert_eq!(account.total, dec!(0.0));
         assert_eq!(account.locked, true);
-        assert!(ledger.disputes.contains_key(&tx_key));
+        assert!(ledger.deposits.contains_key(&tx_key));
     }
 
     #[test]
